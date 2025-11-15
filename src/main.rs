@@ -5,6 +5,7 @@ use std::num::NonZeroU8;
 
 use bevy::{
     color::palettes::basic::*,
+    ecs::{relationship::RelatedSpawner, spawn::SpawnRelatedBundle},
     input_focus::InputFocus,
     log::{self, Level, LogPlugin},
     prelude::*,
@@ -99,33 +100,30 @@ fn setup_ui(mut commands: Commands) {
     // UI camera
     commands.spawn(Camera2d);
 
-    let board_entity = board(&mut commands);
-    let keyboard_entity = keyboard(&mut commands);
-    commands
-        .spawn(Node {
+    commands.spawn((
+        Node {
             width: percent(100),
             height: percent(100),
             align_items: AlignItems::Center,
             justify_content: JustifyContent::Center,
             ..Default::default()
-        })
-        .with_children(|commands| {
-            commands
-                .spawn(Node {
-                    display: Display::Flex,
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    ..Default::default()
-                })
-                .add_child(board_entity)
-                .add_child(keyboard_entity);
-        });
+        },
+        children![(
+            Node {
+                display: Display::Flex,
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..Default::default()
+            },
+            children![board(), keyboard()],
+        )],
+    ));
 }
 
-fn board(commands: &mut Commands) -> Entity {
-    commands
-        .spawn(Node {
+fn board() -> impl Bundle {
+    (
+        Node {
             width: vmin(70),
             height: vmin(70),
             display: Display::Grid,
@@ -145,8 +143,8 @@ fn board(commands: &mut Commands) -> Entity {
             row_gap: px(2),
             column_gap: px(2),
             ..Default::default()
-        })
-        .with_children(|commands| {
+        },
+        Children::spawn(SpawnWith(|commands: &mut RelatedSpawner<'_, ChildOf>| {
             // 000|000|000
             // 000|000|000
             // 000|000|000
@@ -164,7 +162,7 @@ fn board(commands: &mut Commands) -> Entity {
             loop {
                 if x % 4 < 3 && y % 4 < 3 {
                     log::debug!(
-                        "({x}, {y}): Spawning button at {}, {}",
+                        "({x}, {y}): Spawning a ({}, {}) button",
                         x - x / 4,
                         y - y / 4
                     );
@@ -177,7 +175,7 @@ fn board(commands: &mut Commands) -> Entity {
                     commands.spawn(horizontal_line());
                 } else if x % 4 == 3 && y % 4 == 3 {
                     log::debug!("({x}, {y}): Spawning empty cell");
-                    commands.spawn(Node::default()); // empty cell
+                    commands.spawn(Node::default());
                 } else {
                     log::debug!("({x}, {y}): Skipping");
                 }
@@ -191,8 +189,8 @@ fn board(commands: &mut Commands) -> Entity {
                     }
                 }
             }
-        })
-        .id()
+        })),
+    )
 }
 
 fn vertical_line() -> impl Bundle {
@@ -243,9 +241,9 @@ fn slot_button(x: u8, y: u8) -> impl Bundle {
     )
 }
 
-fn keyboard(commands: &mut Commands) -> Entity {
-    commands
-        .spawn(Node {
+fn keyboard() -> impl Bundle {
+    (
+        Node {
             width: vmin(70),
             height: vmin(30),
             display: Display::Grid,
@@ -255,14 +253,12 @@ fn keyboard(commands: &mut Commands) -> Entity {
             align_items: AlignItems::Center,
             justify_items: JustifyItems::Center,
             ..Default::default()
-        })
-        .with_children(|commands| {
-            for i in 1..=9 {
-                commands.spawn(value_button(NonZeroU8::new(i)));
-            }
-            commands.spawn(value_button(NonZeroU8::new(0))); // 0
-        })
-        .id()
+        },
+        Children::spawn(SpawnIter(iter::chain(
+            (1..=9).map(|i| value_button(NonZeroU8::new(i))),
+            iter::once(value_button(NonZeroU8::new(0))),
+        ))),
+    )
 }
 
 #[derive(Debug, Component)]
