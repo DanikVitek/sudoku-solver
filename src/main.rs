@@ -1,11 +1,12 @@
 // #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use core::{iter, num::NonZeroU8, ops::Index};
+use core::{iter, num::NonZeroU8};
 
 use bevy::{
     input_focus::InputFocus,
     log::{self, LogPlugin},
     prelude::*,
+    ui::RelativeCursorPosition,
 };
 use sudoku_solver::Board;
 
@@ -37,21 +38,21 @@ impl Plugin for SudokuPlugin {
         app.init_resource::<InputFocus>();
         app.init_resource::<Board>();
         app.add_systems(Startup, (setup_theme, setup_ui).chain());
-        app.add_systems(Update, update_button_style);
+        app.add_systems(Update, (update_button_style, select_slot));
     }
 }
 
 #[derive(Clone, Copy, Component)]
 #[component(immutable)]
-#[repr(u8)]
-enum ButtonType {
-    Slot,
-    Keyboard,
-}
+struct SlotButton;
+#[derive(Clone, Copy, Component)]
+#[component(immutable)]
+struct KeyboardButton;
 
 #[derive(Resource)]
 struct ButtonThemes {
-    internal: [ButtonTheme; 2],
+    slot: ButtonTheme,
+    keyboard: ButtonTheme,
 }
 
 struct ButtonTheme {
@@ -66,14 +67,6 @@ struct ButtonColor {
     text: TextColor,
 }
 
-impl Index<ButtonType> for ButtonThemes {
-    type Output = ButtonTheme;
-
-    fn index(&self, index: ButtonType) -> &Self::Output {
-        self.internal.get(index as usize).unwrap()
-    }
-}
-
 const ALABASTER_GREY: Color = Color::srgb_u8(220, 220, 221);
 const PALE_SLATE: Color = Color::srgb_u8(197, 195, 198);
 const PACIFIC_CYAN: Color = Color::srgb_u8(25, 133, 161);
@@ -82,68 +75,86 @@ const IRON_GRAY: Color = Color::srgb_u8(0x33, 0x35, 0x37);
 
 fn setup_theme(mut commands: Commands) {
     commands.insert_resource(ButtonThemes {
-        internal: [
-            // ButtonType::Slot
-            ButtonTheme {
-                default_color: ButtonColor {
-                    background: BLUE_SLATE.into(),
-                    border: Default::default(),
-                    text: PALE_SLATE.into(),
-                },
-                hovered_color: ButtonColor {
-                    background: BLUE_SLATE.mix(&Color::WHITE, 2. / 14.).into(),
-                    border: Default::default(),
-                    text: PALE_SLATE.mix(&Color::WHITE, 2. / 14.).into(),
-                },
-                pressed_color: ButtonColor {
-                    background: BLUE_SLATE.mix(&Color::BLACK, 2. / 14.).into(),
-                    border: Default::default(),
-                    text: PALE_SLATE.mix(&Color::BLACK, 2. / 14.).into(),
-                },
+        slot: ButtonTheme {
+            default_color: ButtonColor {
+                background: BLUE_SLATE.into(),
+                border: Default::default(),
+                text: PALE_SLATE.into(),
             },
-            // ButtonType::Keyboard
-            ButtonTheme {
-                default_color: ButtonColor {
-                    background: PACIFIC_CYAN.into(),
-                    border: Default::default(),
-                    text: ALABASTER_GREY.into(),
-                },
-                hovered_color: ButtonColor {
-                    background: PACIFIC_CYAN.mix(&Color::WHITE, 2. / 14.).into(),
-                    border: Default::default(),
-                    text: ALABASTER_GREY.mix(&Color::WHITE, 2. / 14.).into(),
-                },
-                pressed_color: ButtonColor {
-                    background: PACIFIC_CYAN.mix(&Color::BLACK, 2. / 14.).into(),
-                    border: Default::default(),
-                    text: ALABASTER_GREY.mix(&Color::BLACK, 2. / 14.).into(),
-                },
+            hovered_color: ButtonColor {
+                background: BLUE_SLATE.mix(&Color::WHITE, 2. / 14.).into(),
+                border: Default::default(),
+                text: PALE_SLATE.mix(&Color::WHITE, 2. / 14.).into(),
             },
-        ],
+            pressed_color: ButtonColor {
+                background: BLUE_SLATE.mix(&Color::BLACK, 2. / 14.).into(),
+                border: Default::default(),
+                text: PALE_SLATE.mix(&Color::BLACK, 2. / 14.).into(),
+            },
+        },
+        keyboard: ButtonTheme {
+            default_color: ButtonColor {
+                background: PACIFIC_CYAN.into(),
+                border: Default::default(),
+                text: ALABASTER_GREY.into(),
+            },
+            hovered_color: ButtonColor {
+                background: PACIFIC_CYAN.mix(&Color::WHITE, 2. / 14.).into(),
+                border: Default::default(),
+                text: ALABASTER_GREY.mix(&Color::WHITE, 2. / 14.).into(),
+            },
+            pressed_color: ButtonColor {
+                background: PACIFIC_CYAN.mix(&Color::BLACK, 2. / 14.).into(),
+                border: Default::default(),
+                text: ALABASTER_GREY.mix(&Color::BLACK, 2. / 14.).into(),
+            },
+        },
     })
 }
 
 fn update_button_style(
     mut input_focus: ResMut<InputFocus>,
     button_themes: Res<ButtonThemes>,
-    mut interaction_query: Query<
+    mut slot_interaction_query: Query<
         (
             Entity,
             &Interaction,
             &mut BackgroundColor,
             Option<&mut BorderColor>,
             &mut Button,
-            &ButtonType,
             &Children,
         ),
-        Changed<Interaction>,
+        (
+            Changed<Interaction>,
+            With<SlotButton>,
+            Without<KeyboardButton>,
+        ),
+    >,
+    mut keyboard_interaction_query: Query<
+        (
+            Entity,
+            &Interaction,
+            &mut BackgroundColor,
+            Option<&mut BorderColor>,
+            &mut Button,
+            &Children,
+        ),
+        (
+            Changed<Interaction>,
+            With<KeyboardButton>,
+            Without<SlotButton>,
+        ),
     >,
     mut text_color_query: Query<&mut TextColor>,
 ) {
-    for (entity, interaction, mut color, border_color, mut button, button_type, children) in
-        &mut interaction_query
-    {
-        let theme = &button_themes[*button_type];
+    for ((entity, interaction, mut color, border_color, mut button, children), theme) in iter::chain(
+        slot_interaction_query
+            .iter_mut()
+            .zip(iter::repeat(&button_themes.slot)),
+        keyboard_interaction_query
+            .iter_mut()
+            .zip(iter::repeat(&button_themes.keyboard)),
+    ) {
         let mut text_color = text_color_query.get_mut(children[0]).unwrap();
 
         match *interaction {
@@ -180,9 +191,22 @@ fn update_button_style(
     }
 }
 
+fn select_slot(
+    mut selected: ResMut<SelectedSlot>,
+    mut interaction_query: Query<(Entity, &RelativeCursorPosition, Ref<Interaction>), With<Button>>,
+) {
+    if let Some(selected) = selected.0.as_ref().copied() {
+    } else {
+    }
+}
+
+#[derive(Default, Resource)]
+struct SelectedSlot(Option<BoardPosition>);
+
 fn setup_ui(themes: Res<ButtonThemes>, mut commands: Commands) {
     // UI camera
     commands.spawn(Camera2d);
+    commands.init_resource::<SelectedSlot>();
 
     let board_entity = board(&themes, &mut commands);
     let keyboard_entity = keyboard(&themes, &mut commands);
@@ -190,25 +214,42 @@ fn setup_ui(themes: Res<ButtonThemes>, mut commands: Commands) {
     commands
         .spawn((
             Node {
-                width: percent(100),
-                height: percent(100),
-                display: Display::Flex,
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
+                width: vw(100),
+                height: vh(100),
+                position_type: PositionType::Relative,
                 ..Default::default()
             },
             BackgroundColor(IRON_GRAY),
         ))
-        .add_children(&[board_entity, keyboard_entity]);
+        .with_children(|commands| {
+            commands
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        max_width: percent(100),
+                        max_height: percent(100),
+                        top: Val::ZERO,
+                        bottom: Val::ZERO,
+                        left: Val::ZERO,
+                        right: Val::ZERO,
+                        margin: UiRect::all(Val::Auto),
+                        aspect_ratio: Some(0.7),
+                        display: Display::Flex,
+                        flex_direction: FlexDirection::Column,
+                        ..Default::default()
+                    },
+                    BackgroundColor(Color::WHITE),
+                ))
+                .add_children(&[board_entity, keyboard_entity]);
+        });
 }
 
 fn board(themes: &ButtonThemes, commands: &mut Commands) -> Entity {
     commands
         .spawn(Node {
-            min_width: vmin(70),
-            min_height: vmin(70),
-            flex_grow: 1.,
+            width: percent(100),
+            max_height: percent(70),
+            aspect_ratio: Some(1.0), // stay square
             display: Display::Grid,
             grid_template_columns: iter::chain(
                 iter::repeat_n(GridTrack::flex(1.), 3),
@@ -288,7 +329,7 @@ fn vertical_line() -> impl Bundle {
             height: percent(100),
             ..Default::default()
         },
-        BackgroundColor(Color::WHITE),
+        BackgroundColor(PALE_SLATE),
         BorderRadius::MAX,
     )
 }
@@ -301,23 +342,22 @@ fn horizontal_line() -> impl Bundle {
             height: px(2),
             ..Default::default()
         },
-        BackgroundColor(Color::WHITE),
+        BackgroundColor(PALE_SLATE),
         BorderRadius::MAX,
     )
 }
 
-#[derive(Debug, Component)]
+#[derive(Clone, Copy, Debug, Component)]
 struct BoardPosition {
     x: u8,
     y: u8,
 }
 
 fn slot_button(themes: &ButtonThemes, x: u8, y: u8) -> impl Bundle {
-    let button_type = ButtonType::Slot;
-    let theme_color = &themes[button_type].default_color;
+    let theme_color = &themes.slot.default_color;
     (
         Button,
-        button_type,
+        SlotButton,
         BoardPosition { x, y },
         Node {
             width: percent(90),
@@ -335,8 +375,9 @@ fn slot_button(themes: &ButtonThemes, x: u8, y: u8) -> impl Bundle {
 fn keyboard(themes: &ButtonThemes, commands: &mut Commands) -> Entity {
     commands
         .spawn(Node {
-            width: vmin(70),
-            height: vmin(30),
+            aspect_ratio: Some(2.5),
+            width: percent(100),
+            max_height: percent(30),
             display: Display::Grid,
             grid_template_columns: vec![GridTrack::flex(1.); 5],
             grid_template_rows: vec![GridTrack::flex(1.); 2],
@@ -357,11 +398,10 @@ fn keyboard(themes: &ButtonThemes, commands: &mut Commands) -> Entity {
 struct Value(Option<NonZeroU8>);
 
 fn value_button(themes: &ButtonThemes, value: Option<NonZeroU8>) -> impl Bundle {
-    let button_type = ButtonType::Keyboard;
-    let theme_color = &themes[button_type].default_color;
+    let theme_color = &themes.keyboard.default_color;
     (
         Button,
-        button_type,
+        KeyboardButton,
         Value(value),
         Node {
             min_width: percent(90),
