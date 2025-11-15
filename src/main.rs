@@ -4,10 +4,9 @@ use core::iter;
 use std::num::NonZeroU8;
 
 use bevy::{
-    color::palettes::basic::*,
-    ecs::{relationship::RelatedSpawner, spawn::SpawnRelatedBundle},
+    ecs::relationship::RelatedSpawner,
     input_focus::InputFocus,
-    log::{self, Level, LogPlugin},
+    log::{Level, LogPlugin},
     prelude::*,
 };
 use sudoku_solver::Board;
@@ -104,20 +103,13 @@ fn setup_ui(mut commands: Commands) {
         Node {
             width: percent(100),
             height: percent(100),
+            display: Display::Flex,
+            flex_direction: FlexDirection::Column,
             align_items: AlignItems::Center,
             justify_content: JustifyContent::Center,
             ..Default::default()
         },
-        children![(
-            Node {
-                display: Display::Flex,
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                ..Default::default()
-            },
-            children![board(), keyboard()],
-        )],
+        children![board(), keyboard()],
     ));
 }
 
@@ -127,16 +119,20 @@ fn board() -> impl Bundle {
             width: vmin(70),
             height: vmin(70),
             display: Display::Grid,
-            grid_template_columns: iter::repeat_n(GridTrack::flex(1.), 3)
-                .chain(iter::once(GridTrack::auto()))
-                .cycle()
-                .take(11)
-                .collect(),
-            grid_template_rows: iter::repeat_n(GridTrack::flex(1.), 3)
-                .chain(iter::once(GridTrack::auto()))
-                .cycle()
-                .take(11)
-                .collect(),
+            grid_template_columns: iter::chain(
+                iter::repeat_n(GridTrack::flex(1.), 3),
+                iter::once(GridTrack::auto()),
+            )
+            .cycle()
+            .take(11)
+            .collect(),
+            grid_template_rows: iter::chain(
+                iter::repeat_n(GridTrack::flex(1.), 3),
+                iter::once(GridTrack::auto()),
+            )
+            .cycle()
+            .take(11)
+            .collect(),
             grid_auto_flow: GridAutoFlow::Row,
             align_items: AlignItems::Center,
             justify_items: JustifyItems::Center,
